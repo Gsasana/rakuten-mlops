@@ -1,11 +1,10 @@
 import logging
 from pathlib import Path
-from box import ConfigBox
-
-from evaluation.utils.common import read_yaml, create_directories
 from evaluation.entity.config_entity import EvaluationConfig
+from evaluation.utils.common import read_yaml, create_directories
 
 # Logger
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
@@ -27,9 +26,7 @@ class ConfigurationManager:
         self.project_root = Path(config_path).resolve().parent.parent
 
         # Création du dossier pour les métriques
-        metrics_dir = (
-            self.project_root / Path(self.config.evaluation.metrics_output_path).parent
-        )
+        metrics_dir = self.project_root / Path(self.config.evaluation.metrics_output_path).parent
         create_directories([metrics_dir])
 
     def get_evaluation_config(self) -> EvaluationConfig:

@@ -1,77 +1,90 @@
-from fastapi import FastAPI, Request
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from starlette.responses import HTMLResponse
-import yaml
-from pathlib import Path
+# src/frontend/app.py
 
-# --- App initialization ---
-app = FastAPI()
+import streamlit as st
+import requests
 
-# BASE_DIR doit pointer sur le dossier src/frontend
-BASE_DIR = Path(__file__).parent  # src/frontend
-# Pour accéder à la config située à la racine du projet dans /config
-CONFIG_DIR = BASE_DIR.parent.parent / "config"  # src/frontend → src → racine/config
+# Point everything to the gateway
+GATEWAY_URL = "http://localhost:8002"  # Adjust if you run on Docker network
 
-# Mount static assets (même si vide) depuis src/frontend/static
-app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
-
-# Template engine pointant sur src/frontend/templates
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-
-# Load frontend config (contient notamment l'URL de l'API)
-with open(CONFIG_DIR / "config.yaml", "r", encoding="utf-8") as f:
-    frontend_cfg = yaml.safe_load(f)
-API_URL = frontend_cfg.get("api_url", "http://localhost:8080")
+st.set_page_config(page_title="ML Inference Demo", layout="centered")
 
 
-# --- Routes for each microservice page ---
-@app.get("/ingestion", response_class=HTMLResponse)
-async def ingestion_page(request: Request):
-    return templates.TemplateResponse(
-        "ingestion.html",
-        {"request": request, "api_url": API_URL},
-    )
+def login_form():
+    st.title("Login")
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Login"):
+        with st.spinner("Authenticating..."):
+            try:
+                resp = requests.post(
+                    f"{GATEWAY_URL}/login",
+                    json={"username": username, "password": password},
+                    timeout=5,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    st.session_state["jwt_token"] = data.get("access_token")
+                    st.session_state["user_role"] = data.get("role")
+                    st.success("Login successful")
+                    st.rerun()
+                else:
+                    st.error(f"Login failed: {resp.json().get('detail', resp.text)}")
+            except Exception as e:
+                st.error(f"Login failed: {e}")
 
 
-@app.get("/preprocessing", response_class=HTMLResponse)
-async def preprocessing_page(request: Request):
-    return templates.TemplateResponse(
-        "preprocessing.html",
-        {"request": request, "api_url": API_URL},
-    )
+def predict_form():
+    st.title("Price Prediction")
+    sku = st.text_input("SKU")
+    if st.button("Predict"):
+        token = st.session_state.get("jwt_token")
+        headers = {"Authorization": f"Bearer {token}"}
+        with st.spinner("Predicting..."):
+            try:
+                resp = requests.post(
+                    f"{GATEWAY_URL}/predict",
+                    json={"sku": sku},
+                    headers=headers,
+                    timeout=5,
+                )
+                if resp.status_code == 200:
+                    result = resp.json()
+                    st.success(
+                        f"SKU: {result['sku']}\n\n"
+                        f"Predicted Price: {result['predicted_price']} €\n\n"
+                        f"Timestamp: {result['timestamp']}"
+                    )
+                else:
+                    st.error(f"Prediction failed: {resp.json().get('detail', resp.text)}")
+            except Exception as e:
+                st.error(f"Prediction failed: {e}")
+
+    # Admin-only reload-model
+    if st.session_state.get("user_role") == "admin":
+        if st.button("Reload Model"):
+            token = st.session_state.get("jwt_token")
+            headers = {"Authorization": f"Bearer {token}"}
+            try:
+                resp = requests.post(f"{GATEWAY_URL}/reload-model", headers=headers, timeout=5)
+                if resp.status_code == 200:
+                    st.success("Model reloaded successfully.")
+                else:
+                    st.error(f"Reload failed: {resp.json().get('detail', resp.text)}")
+            except Exception as e:
+                st.error(f"Reload failed: {e}")
+
+    if st.button("Logout"):
+        st.session_state.pop("jwt_token", None)
+        st.session_state.pop("user_role", None)
+        st.rerun()
 
 
-@app.get("/training", response_class=HTMLResponse)
-async def training_page(request: Request):
-    return templates.TemplateResponse(
-        "training.html",
-        {"request": request, "api_url": API_URL},
-    )
+def main():
+    if "jwt_token" not in st.session_state:
+        login_form()
+    else:
+        predict_form()
 
 
-@app.get("/evaluation", response_class=HTMLResponse)
-async def evaluation_page(request: Request):
-    return templates.TemplateResponse(
-        "evaluation.html",
-        {"request": request, "api_url": API_URL},
-    )
-
-
-@app.get("/inference", response_class=HTMLResponse)
-async def inference_page(request: Request):
-    return templates.TemplateResponse(
-        "inference.html",
-        {"request": request, "api_url": API_URL},
-    )
-
-
-# Health check for frontend
-@app.get("/health")
-def health():
-    return {"status": "OK", "frontend": "running"}
-
-
-@app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
-    return RedirectResponse("/ingestion")
+if __name__ == "__main__":
+    main()

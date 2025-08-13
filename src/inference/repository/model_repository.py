@@ -1,3 +1,5 @@
+# src/inference/repository/model_repository.py
+
 from abc import ABC, abstractmethod
 import mlflow.pyfunc
 from typing import Any
@@ -20,9 +22,7 @@ class MlflowModelRepository(ModelRepository):
     Chargement du modèle depuis le MLflow Model Registry.
     """
 
-    def __init__(
-        self, tracking_uri: str, model_name: str, model_stage: str = "Production"
-    ):
+    def __init__(self, tracking_uri: str, model_name: str, model_stage: str = "Production"):
         self.tracking_uri = tracking_uri
         self.model_name = model_name
         self.model_stage = model_stage
